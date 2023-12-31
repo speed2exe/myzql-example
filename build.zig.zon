@@ -1,0 +1,11 @@
+.{
+    .name = "myzql-example",
+    .version = "0.0.1",
+    .dependencies = .{
+        .myzql = .{
+	    .url = "https://github.com/speed2exe/myzql/archive/refs/tags/0.0.1.tar.gz",
+            .hash = "1220d61d2d02bc9964442724d09d69cc0b1149971215cf1b6eec1068fe532ab776ea",
+	}
+    },
+    .paths = .{ "" },
+}
