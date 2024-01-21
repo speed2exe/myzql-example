@@ -18,5 +18,5 @@ pub fn build(b: *std.Build) void {
     // Add dependency here:
     const myzql_dep = b.dependency("myzql", .{});
     const myzql = myzql_dep.module("myzql");
-    exe.addModule("myzql", myzql);
+    exe.root_module.addImport("myzql", myzql);
 }

@@ -3,6 +3,7 @@ const myzql = @import("myzql");
 const Client = myzql.client.Client;
 const DateTime = myzql.temporal.DateTime;
 const Duration = myzql.temporal.Duration;
+const OkPacket = myzql.protocol.generic_response.OkPacket;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -115,6 +116,7 @@ fn example_insert_query(c: *Client, allocator: std.mem.Allocator) !void {
 
     try queryExpectOk(allocator, c,
         \\CREATE TABLE test.person (
+        \\    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
         \\    name VARCHAR(255),
         \\    age INT
         \\)
@@ -122,7 +124,7 @@ fn example_insert_query(c: *Client, allocator: std.mem.Allocator) !void {
     defer queryExpectOk(allocator, c, "DROP TABLE test.person") catch {};
 
     { // Insert
-        const prep_res = try c.prepare(allocator, "INSERT INTO test.person VALUES (?, ?)");
+        const prep_res = try c.prepare(allocator, "INSERT INTO test.person (name, age) VALUES (?, ?)");
         defer prep_res.deinit(allocator);
         const prep_stmt = try prep_res.expect(.ok);
         const params = .{
@@ -132,7 +134,9 @@ fn example_insert_query(c: *Client, allocator: std.mem.Allocator) !void {
         inline for (params) |param| {
             const exe_res = try c.execute(allocator, &prep_stmt, param);
             defer exe_res.deinit(allocator);
-            _ = try exe_res.expect(.ok);
+            const ok: OkPacket = try exe_res.expect(.ok);
+            const last_insert_id: u64 = ok.last_insert_id;
+            std.debug.print("last_insert_id: {any}\n", .{last_insert_id});
         }
     }
 
@@ -157,7 +161,7 @@ fn example_insert_query(c: *Client, allocator: std.mem.Allocator) !void {
     // }
 
     { // Binary Protocol Result
-        const prep_res = try c.prepare(allocator, "SELECT * FROM test.person");
+        const prep_res = try c.prepare(allocator, "SELECT name, age FROM test.person");
         defer prep_res.deinit(allocator);
         const prep_stmt = try prep_res.expect(.ok);
         const Person = struct {
