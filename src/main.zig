@@ -23,11 +23,11 @@ pub fn main() !void {
     }
 
     var c = try Conn.init(allocator, &.{ .password = "password" });
-    defer c.deinit();
+    defer c.deinit(allocator);
     try c.ping();
 
     try exampleQuery(&c);
-    try syntaxError(&c);
+    try syntaxError(&c );
     try exampleSelectTextProtocol(&c, allocator);
     try exampleBinaryProtocol(&c, allocator);
     try exampleTemporal(&c, allocator);
@@ -55,7 +55,7 @@ fn syntaxError(c: *Conn) !void {
 
 fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
     { // Iterating over rows and elements
-        const query_res = try c.queryRows(
+        const query_res = try c.queryRows(allocator,
             \\ SELECT 1, "2", 3.14, "4"
             \\ UNION ALL
             \\ SELECT 5, "6", null, "8"
@@ -71,7 +71,7 @@ fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
         }
     }
     { // Iterating over rows, collecting elements into []const ?[]const u8
-        const query_res = try c.queryRows("SELECT 3, 4, null, 6, 7");
+        const query_res = try c.queryRows(allocator, "SELECT 3, 4, null, 6, 7");
         const rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
         const rows_iter: ResultRowIter(TextResultRow) = rows.iter();
         while (try rows_iter.next()) |row| {
@@ -81,14 +81,14 @@ fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
         }
     }
     { // Collecting all elements into a table
-        const query_res = try c.queryRows(
+        const query_res = try c.queryRows(allocator,
             \\SELECT 8,9
             \\UNION ALL
             \\SELECT 10,11
         );
 
-        const rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
-        const table = try rows.tableTexts(allocator);
+        var rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
+        var table = try rows.tableTexts(allocator);
         defer table.deinit(allocator); // table is valid until deinit is called
         std.debug.print("table: {any}\n", .{table.table});
     }
@@ -143,7 +143,7 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
 
         { // Iterating over rows, scanning into struct or creating struct
-            const query_res = try c.executeRows(&prep_stmt, .{}); // no parameters because there's no ? in the query
+            const query_res = try c.executeRows(allocator, &prep_stmt, .{}); // no parameters because there's no ? in the query
             const rows: ResultSet(BinaryResultRow) = try query_res.expect(.rows);
             const rows_iter = rows.iter();
             while (try rows_iter.next()) |row| {
@@ -168,10 +168,10 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
             }
         }
         { // collect all rows into a table ([]const Person)
-            const query_res = try c.executeRows(&prep_stmt, .{}); // no parameters because there's no ? in the query
+            var query_res = try c.executeRows(allocator, &prep_stmt, .{}); // no parameters because there's no ? in the query
             const rows: ResultSet(BinaryResultRow) = try query_res.expect(.rows);
             const rows_iter = rows.iter();
-            const person_structs = try rows_iter.tableStructs(Person, allocator);
+            var person_structs = try rows_iter.tableStructs(Person, allocator);
             defer person_structs.deinit(allocator); // data is valid until deinit is called
             std.debug.print("person_structs: {any}\n", .{person_structs.struct_list.items});
         }
@@ -227,11 +227,11 @@ fn exampleTemporal(c: *Conn, allocator: std.mem.Allocator) !void {
         const prep_res = try c.prepare(allocator, "SELECT * FROM test.temporal_types_example");
         defer prep_res.deinit(allocator);
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
-        const res = try c.executeRows(&prep_stmt, .{});
+        const res = try c.executeRows(allocator, &prep_stmt, .{});
         const rows: ResultSet(BinaryResultRow) = try res.expect(.rows);
         const rows_iter = rows.iter();
 
-        const structs = try rows_iter.tableStructs(DateTimeDuration, allocator);
+        var structs = try rows_iter.tableStructs(DateTimeDuration, allocator);
         defer structs.deinit(allocator);
         std.debug.print("structs: {any}\n", .{structs.struct_list.items}); // structs.rows: []const DateTimeDuration
         // Do something with structs

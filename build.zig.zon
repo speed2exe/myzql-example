@@ -1,9 +1,12 @@
 .{
-    .name = "myzql-example",
+    .name = .myzql_example,
+    .fingerprint = 0x3f9f742dad45e823,
     .version = "0.0.1",
-    .dependencies = .{ .myzql = .{
-        .url = "https://github.com/speed2exe/myzql/archive/refs/tags/0.13.2.tar.gz",
-        .hash = "1220fabc6675903f26431b0f9ca97f5d0f7ee69dea89586300d35a7ba370d4e0a356",
-    } },
+    .dependencies = .{
+        .myzql = .{
+            .url = "git+https://github.com/speed2exe/myzql?ref=0.15.1#d93d383e097dfc8a4431e5154874eeda4c623f60",
+            .hash = "myzql-0.0.0-XU5aAP_0AgCPYPMy61wPn8RgtS_wlJK5kRrU38taGTrY",
+        },
+    },
     .paths = .{""},
 }
