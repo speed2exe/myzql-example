@@ -2,11 +2,11 @@
 Usage examples for myzql
 
 # This example uses the following version
-- myzql: 0.15.1
-- zig: 0.15.1
+- myzql: 0.16.0
+- zig: 0.16.0
 
 ## Setup and adding dependency to your project
-- Look into `zig.build.zon` and `zig.build`
+- Look into `build.zig.zon` and `build.zig`
 
 ## Usage
 - Look into `src/main.zig`

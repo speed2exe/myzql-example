@@ -4,8 +4,8 @@
     .version = "0.0.1",
     .dependencies = .{
         .myzql = .{
-            .url = "git+https://github.com/speed2exe/myzql?ref=0.15.1#d93d383e097dfc8a4431e5154874eeda4c623f60",
-            .hash = "myzql-0.0.0-XU5aAP_0AgCPYPMy61wPn8RgtS_wlJK5kRrU38taGTrY",
+            .url = "git+https://github.com/speed2exe/myzql?ref=0.16.0#ec9b8051b8fb2c90790a9818cf0b576b5d27eef8",
+            .hash = "myzql-0.0.0-XU5aAGYcAwD5F0BXNRyhhZlE2BOcozErUATya4Q_L9-q",
         },
     },
     .paths = .{""},

@@ -12,50 +12,43 @@ const TextElems = myzql.result.TextElems;
 const PreparedStatement = myzql.result.PreparedStatement;
 const BinaryResultRow = myzql.result.BinaryResultRow;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer {
-        switch (gpa.deinit()) {
-            .ok => {},
-            .leak => std.log.err("memory leak detected", .{}),
-        }
-    }
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    const allocator = init.gpa;
+    var c = try Conn.init(allocator, io, &.{ .password = "password" });
+    defer c.deinit(allocator, io);
+    try c.ping(io);
 
-    var c = try Conn.init(allocator, &.{ .password = "password" });
-    defer c.deinit(allocator);
-    try c.ping();
-
-    try exampleQuery(&c);
-    try syntaxError(&c );
-    try exampleSelectTextProtocol(&c, allocator);
-    try exampleBinaryProtocol(&c, allocator);
-    try exampleTemporal(&c, allocator);
+    try exampleQuery(&c, io);
+    try syntaxError(&c, io);
+    try exampleSelectTextProtocol(&c, io, allocator);
+    try exampleBinaryProtocol(&c, io, allocator);
+    try exampleTemporal(&c, io, allocator);
 }
 
 // query database create and drop
-fn exampleQuery(c: *Conn) !void {
+fn exampleQuery(c: *Conn, io: std.Io) !void {
     {
-        const qr = try c.query("CREATE DATABASE testdb");
+        const qr = try c.query(io, "CREATE DATABASE testdb");
         _ = try qr.expect(.ok);
     }
     {
-        const qr = try c.query("DROP DATABASE testdb");
+        const qr = try c.query(io, "DROP DATABASE testdb");
         _ = try qr.expect(.ok);
     }
 }
 
-fn syntaxError(c: *Conn) !void {
-    const qr = try c.query("garbage query");
+fn syntaxError(c: *Conn, io: std.Io) !void {
+    const qr = try c.query(io, "garbage query");
     switch (qr) {
         .err => |e| std.log.err("this error is expected: {s}", .{e.error_message}),
         else => std.log.err("expect error but got: {any}", .{qr}),
     }
 }
 
-fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
+fn exampleSelectTextProtocol(c: *Conn, io: std.Io, allocator: std.mem.Allocator) !void {
     { // Iterating over rows and elements
-        const query_res = try c.queryRows(allocator,
+        const query_res = try c.queryRows(allocator, io,
             \\ SELECT 1, "2", 3.14, "4"
             \\ UNION ALL
             \\ SELECT 5, "6", null, "8"
@@ -63,7 +56,7 @@ fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
 
         const rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
         const rows_iter: ResultRowIter(TextResultRow) = rows.iter();
-        while (try rows_iter.next()) |row| { // ResultRow(TextResultRow)
+        while (try rows_iter.next(io)) |row| { // ResultRow(TextResultRow)
             var elems_iter: TextElemIter = row.iter();
             while (elems_iter.next()) |elem| { // ?[] const u8
                 std.debug.print("{?s} ", .{elem});
@@ -71,44 +64,44 @@ fn exampleSelectTextProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
         }
     }
     { // Iterating over rows, collecting elements into []const ?[]const u8
-        const query_res = try c.queryRows(allocator, "SELECT 3, 4, null, 6, 7");
+        const query_res = try c.queryRows(allocator, io, "SELECT 3, 4, null, 6, 7");
         const rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
         const rows_iter: ResultRowIter(TextResultRow) = rows.iter();
-        while (try rows_iter.next()) |row| {
+        while (try rows_iter.next(io)) |row| {
             const elems: TextElems = try row.textElems(allocator);
             defer elems.deinit(allocator); // elems are valid until deinit is called
             std.debug.print("elems: {any}\n", .{elems.elems});
         }
     }
     { // Collecting all elements into a table
-        const query_res = try c.queryRows(allocator,
+        const query_res = try c.queryRows(allocator, io,
             \\SELECT 8,9
             \\UNION ALL
             \\SELECT 10,11
         );
 
         var rows: ResultSet(TextResultRow) = try query_res.expect(.rows);
-        var table = try rows.tableTexts(allocator);
+        var table = try rows.tableTexts(allocator, io);
         defer table.deinit(allocator); // table is valid until deinit is called
         std.debug.print("table: {any}\n", .{table.table});
     }
 }
 
-fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
+fn exampleBinaryProtocol(c: *Conn, io: std.Io, allocator: std.mem.Allocator) !void {
     // Database and table setup
-    try queryExpectOk(c, "CREATE DATABASE testdb");
-    defer queryExpectOkOrLog(c, "DROP DATABASE testdb");
-    try queryExpectOk(c,
+    try queryExpectOk(c, io, "CREATE DATABASE testdb");
+    defer queryExpectOkOrLog(c, io, "DROP DATABASE testdb");
+    try queryExpectOk(c, io,
         \\CREATE TABLE testdb.person (
         \\  id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
         \\  name VARCHAR(255),
         \\  age INT
         \\)
     );
-    defer queryExpectOkOrLog(c, "DROP TABLE testdb.person");
+    defer queryExpectOkOrLog(c, io, "DROP TABLE testdb.person");
 
     { // Insert
-        const prep_res = try c.prepare(allocator, "INSERT INTO testdb.person (name, age) VALUES (?, ?)");
+        const prep_res = try c.prepare(allocator, io, "INSERT INTO testdb.person (name, age) VALUES (?, ?)");
         defer prep_res.deinit(allocator);
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
         const params = .{
@@ -117,7 +110,7 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
         };
 
         inline for (params) |param| {
-            const exe_res = try c.execute(&prep_stmt, param);
+            const exe_res = try c.execute(io, &prep_stmt, param);
             const ok: OkPacket = try exe_res.expect(.ok); // expecting ok here because there's no rows returned
             const last_insert_id: u64 = ok.last_insert_id;
             std.debug.print("last_insert_id: {any}\n", .{last_insert_id});
@@ -138,15 +131,15 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
             \\SELECT name, age
             \\FROM testdb.person
         ;
-        const prep_res = try c.prepare(allocator, query);
+        const prep_res = try c.prepare(allocator, io, query);
         defer prep_res.deinit(allocator);
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
 
         { // Iterating over rows, scanning into struct or creating struct
-            const query_res = try c.executeRows(allocator, &prep_stmt, .{}); // no parameters because there's no ? in the query
+            const query_res = try c.executeRows(allocator, io, &prep_stmt, .{}); // no parameters because there's no ? in the query
             const rows: ResultSet(BinaryResultRow) = try query_res.expect(.rows);
             const rows_iter = rows.iter();
-            while (try rows_iter.next()) |row| {
+            while (try rows_iter.next(io)) |row| {
                 { // scanning into preallocated person
                     var person: Person = undefined;
                     try row.scan(&person);
@@ -168,10 +161,10 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
             }
         }
         { // collect all rows into a table ([]const Person)
-            var query_res = try c.executeRows(allocator, &prep_stmt, .{}); // no parameters because there's no ? in the query
+            var query_res = try c.executeRows(allocator, io, &prep_stmt, .{}); // no parameters because there's no ? in the query
             const rows: ResultSet(BinaryResultRow) = try query_res.expect(.rows);
             const rows_iter = rows.iter();
-            var person_structs = try rows_iter.tableStructs(Person, allocator);
+            var person_structs = try rows_iter.tableStructs(Person, allocator, io);
             defer person_structs.deinit(allocator); // data is valid until deinit is called
             std.debug.print("person_structs: {any}\n", .{person_structs.struct_list.items});
         }
@@ -179,20 +172,20 @@ fn exampleBinaryProtocol(c: *Conn, allocator: std.mem.Allocator) !void {
 }
 
 // Date and time types
-fn exampleTemporal(c: *Conn, allocator: std.mem.Allocator) !void {
-    try queryExpectOk(c, "CREATE DATABASE test");
-    defer queryExpectOk(c, "DROP DATABASE test") catch {};
+fn exampleTemporal(c: *Conn, io: std.Io, allocator: std.mem.Allocator) !void {
+    try queryExpectOk(c, io, "CREATE DATABASE test");
+    defer queryExpectOk(c, io, "DROP DATABASE test") catch {};
 
-    try queryExpectOk(c,
+    try queryExpectOk(c, io,
         \\CREATE TABLE test.temporal_types_example (
         \\    event_time DATETIME(6) NOT NULL,
         \\    duration TIME(6) NOT NULL
         \\)
     );
-    defer queryExpectOk(c, "DROP TABLE test.temporal_types_example") catch {};
+    defer queryExpectOk(c, io, "DROP TABLE test.temporal_types_example") catch {};
 
     { // Insert
-        const prep_res = try c.prepare(allocator, "INSERT INTO test.temporal_types_example VALUES (?, ?)");
+        const prep_res = try c.prepare(allocator, io, "INSERT INTO test.temporal_types_example VALUES (?, ?)");
         defer prep_res.deinit(allocator);
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
 
@@ -214,7 +207,7 @@ fn exampleTemporal(c: *Conn, allocator: std.mem.Allocator) !void {
         };
         const params = .{.{ my_time, my_duration }};
         inline for (params) |param| {
-            const exe_res = try c.execute(&prep_stmt, param);
+            const exe_res = try c.execute(io, &prep_stmt, param);
             _ = try exe_res.expect(.ok);
         }
     }
@@ -224,14 +217,14 @@ fn exampleTemporal(c: *Conn, allocator: std.mem.Allocator) !void {
             event_time: DateTime,
             duration: Duration,
         };
-        const prep_res = try c.prepare(allocator, "SELECT * FROM test.temporal_types_example");
+        const prep_res = try c.prepare(allocator, io, "SELECT * FROM test.temporal_types_example");
         defer prep_res.deinit(allocator);
         const prep_stmt: PreparedStatement = try prep_res.expect(.stmt);
-        const res = try c.executeRows(allocator, &prep_stmt, .{});
+        const res = try c.executeRows(allocator, io, &prep_stmt, .{});
         const rows: ResultSet(BinaryResultRow) = try res.expect(.rows);
         const rows_iter = rows.iter();
 
-        var structs = try rows_iter.tableStructs(DateTimeDuration, allocator);
+        var structs = try rows_iter.tableStructs(DateTimeDuration, allocator, io);
         defer structs.deinit(allocator);
         std.debug.print("structs: {any}\n", .{structs.struct_list.items}); // structs.rows: []const DateTimeDuration
         // Do something with structs
@@ -239,13 +232,13 @@ fn exampleTemporal(c: *Conn, allocator: std.mem.Allocator) !void {
 }
 
 // convenient function for testing
-fn queryExpectOk(c: *Conn, query: []const u8) !void {
-    const query_res = try c.query(query);
+fn queryExpectOk(c: *Conn, io: std.Io, query: []const u8) !void {
+    const query_res = try c.query(io, query);
     _ = try query_res.expect(.ok);
 }
 
-fn queryExpectOkOrLog(c: *Conn, query: []const u8) void {
-    queryExpectOk(c, query) catch |err| {
+fn queryExpectOkOrLog(c: *Conn, io: std.Io, query: []const u8) void {
+    queryExpectOk(c, io, query) catch |err| {
         std.log.err("error: {any}", .{err});
     };
 }

@@ -1,0 +1,27 @@
+name: Compilation
+
+on:
+  push:
+    branches:
+     - main
+  pull_request:
+    branches:
+     - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - name: Build for Ubuntu
+        run: |
+          zig build
+
+      - name: Build for Windows GNU
+        run: |
+          zig build -Dtarget=x86_64-windows-gnu
